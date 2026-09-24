@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 public class DataProcessor : MonoBehaviour
@@ -6,12 +7,14 @@ public class DataProcessor : MonoBehaviour
     public class DeviceInfo
     {
         public int id;
-        public int light;          // 0 = 亮，1 = 暗
-        public float temperature;  // 摄氏度
+        public int light;
+        public float temperature;
         public float lastUpdateTime;
+        public bool isOnline = true;
     }
 
     private static Dictionary<int, DeviceInfo> devices = new Dictionary<int, DeviceInfo>();
+    private static ConcurrentQueue<string> jsonQueue = new ConcurrentQueue<string>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void AutoCreate()
@@ -21,59 +24,78 @@ public class DataProcessor : MonoBehaviour
         DontDestroyOnLoad(go);
     }
 
+    // WebSocket 收到消息时调这个
+    public static void EnqueueRawMessage(string json)
+    {
+        jsonQueue.Enqueue(json);
+    }
+
     void Update()
     {
-        // 从队列取原始数据并解析
-        while (TcpServerManager.ReceivedMessages.TryDequeue(out string msg))
+        while (jsonQueue.TryDequeue(out string json))
         {
-            ProcessMessage(msg);
+            ProcessJson(json);
         }
     }
 
-    private void ProcessMessage(string msg)
+    private void ProcessJson(string json)
     {
-        // 协议：IIILTTTT（7位数字）
-        // III：设备ID（2位），L：灯光（1位），TTTT：温度×100（4位）
-        if (msg.Length != 7) return;
-        if (!int.TryParse(msg.Substring(0, 2), out int id)) return;
-        if (!int.TryParse(msg.Substring(2, 1), out int light)) return;
-        if (!int.TryParse(msg.Substring(3, 4), out int tempRaw)) return;
+        try
+        {
+            // 简单 JSON 解析（避免依赖第三方库）
+            // 格式：{"deviceId":7,"lightState":0,"temperature":22.56,"timestamp":...}
+            int deviceId = ExtractInt(json, "deviceId");
+            int lightState = ExtractInt(json, "lightState");
+            float temperature = ExtractFloat(json, "temperature");
 
-        float temp = tempRaw / 100.0f;
+            if (!devices.ContainsKey(deviceId))
+                devices[deviceId] = new DeviceInfo { id = deviceId };
 
-        if (!devices.ContainsKey(id))
-            devices[id] = new DeviceInfo { id = id };
+            devices[deviceId].light = lightState;
+            devices[deviceId].temperature = temperature;
+            devices[deviceId].lastUpdateTime = Time.time;
+            devices[deviceId].isOnline = true;
 
-        devices[id].light = light;
-        devices[id].temperature = temp;
-        devices[id].lastUpdateTime = Time.time;
-
-        Debug.Log($"设备 {id:D2}：灯光 {(light == 0 ? "亮" : "暗")}，温度 {temp:F2}℃");
+            Debug.Log($"设备 {deviceId:D2}：灯光 {(lightState == 0 ? "亮" : "暗")}，温度 {temperature:F2}℃");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("JSON解析失败: " + e.Message);
+        }
     }
 
-    // ---------- 外部获取接口 ----------
+    private int ExtractInt(string json, string key)
+    {
+        string pattern = $"\"{key}\":";
+        int idx = json.IndexOf(pattern);
+        if (idx < 0) return 0;
+        idx += pattern.Length;
+        int end = json.IndexOfAny(new char[] { ',', '}' }, idx);
+        return int.Parse(json.Substring(idx, end - idx));
+    }
 
-    /// <summary>获取指定设备的温度（℃），无数据返回 0</summary>
+    private float ExtractFloat(string json, string key)
+    {
+        string pattern = $"\"{key}\":";
+        int idx = json.IndexOf(pattern);
+        if (idx < 0) return 0f;
+        idx += pattern.Length;
+        int end = json.IndexOfAny(new char[] { ',', '}' }, idx);
+        return float.Parse(json.Substring(idx, end - idx));
+    }
+
+    // ---------- 外部查询接口 ----------
     public static float GetTemperature(int id)
-    {
-        return devices.TryGetValue(id, out var info) ? info.temperature : 0f;
-    }
+        => devices.TryGetValue(id, out var info) ? info.temperature : 0f;
 
-    /// <summary>获取指定设备的灯光状态（0=亮，1=暗），无数据返回 -1</summary>
     public static int GetLight(int id)
-    {
-        return devices.TryGetValue(id, out var info) ? info.light : -1;
-    }
+        => devices.TryGetValue(id, out var info) ? info.light : -1;
 
-    /// <summary>获取指定设备的完整信息，无数据返回 null</summary>
     public static DeviceInfo GetDeviceInfo(int id)
-    {
-        return devices.TryGetValue(id, out var info) ? info : null;
-    }
+        => devices.TryGetValue(id, out var info) ? info : null;
 
-    /// <summary>获取所有已连接设备的 ID 列表</summary>
-    public static IEnumerable<int> GetAllDeviceIds()
-    {
-        return devices.Keys;
-    }
+    public static IEnumerable<int> GetAllDeviceIds() => devices.Keys;
+
+    public static bool IsOnline(int id)
+        => devices.TryGetValue(id, out var info) && info.isOnline;
 }
