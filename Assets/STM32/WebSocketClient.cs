@@ -4,7 +4,7 @@ using System;
 
 public class WebSocketClient : MonoBehaviour
 {
-    [SerializeField] private string serverUrl = "ws://192.168.48.102:8080";  // ← 改成你电脑的IP
+    [SerializeField] private string serverUrl = "ws://192.168.200.102:8080";  // ← 改成你电脑的IP
     private WebSocket websocket;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]

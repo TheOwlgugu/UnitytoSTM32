@@ -928,7 +928,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 441dc2c7f0110b9449f7ffa5924b2202, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  deviceId: 4
+  deviceId: 1
   statusText: {fileID: 1449381649}
 --- !u!114 &1449381649
 MonoBehaviour:
@@ -950,7 +950,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'ID:4
+  m_text: 'ID:1
 
     TMP:'
   m_isRightToLeft: 0
